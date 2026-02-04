@@ -162,6 +162,13 @@ send_discord() {
 echo "--- Fetching origin ---"
 git fetch origin "BRANCH_NAME_PLACEHOLDER"
 
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+if [ "$CURRENT_BRANCH" != "BRANCH_NAME_PLACEHOLDER" ]; then
+    echo "--- Switching to BRANCH_NAME_PLACEHOLDER ---"
+    git checkout "BRANCH_NAME_PLACEHOLDER" || git checkout -b "BRANCH_NAME_PLACEHOLDER" --track origin/"BRANCH_NAME_PLACEHOLDER"
+fi
+
 LOCAL_HASH=$(git rev-parse HEAD)
 REMOTE_HASH=$(git rev-parse origin/"BRANCH_NAME_PLACEHOLDER")
 
@@ -172,8 +179,8 @@ fi
 
 send_discord "🔄 Deployment started..." 3447003 "STARTED"
 
-echo "--- Syncing Tracked Files ---"
-git checkout origin/"BRANCH_NAME_PLACEHOLDER" -- .
+echo "--- Pulling latest changes ---"
+git pull origin main
 
 # Post-deploy hooks
 if [ -f "package.json" ]; then
@@ -185,7 +192,7 @@ if [ -f "composer.json" ]; then
     composer install --no-dev --no-interaction --optimize-autoloader
 fi
 
-send_discord "✅ Deployment successful!" 3066993 "SUCCESS"
+send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
 echo "--- Finished: $(date) ---"
 EOF
 
