@@ -156,7 +156,7 @@ send_discord() {
     }'
   )
 
-  curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "DISCORD_URL_PLACEHOLDER" > /dev/null
+  curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "DISCORD_URL_PLACEHOLDER" > /dev/null 2>&1
 }
 
 echo "--- Fetching origin ---"
@@ -183,11 +183,11 @@ git pull origin "BRANCH_NAME_PLACEHOLDER"
 # Post-deploy hooks
 if [ -f "package.json" ]; then
     echo "Installing Node dependencies..."
-    npm install
+    npm install > /dev/null 2>&1
 fi
 if [ -f "composer.json" ]; then
     echo "Installing PHP dependencies..."
-    sudo composer install --no-dev --no-interaction --optimize-autoloader
+    sudo composer install --no-dev --no-interaction --optimize-autoloader > /dev/null 2>&1
 fi
 
 send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
