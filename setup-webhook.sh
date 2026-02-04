@@ -177,10 +177,8 @@ if [ "$LOCAL_HASH" == "$REMOTE_HASH" ]; then
     exit 0
 fi
 
-send_discord "🔄 Deployment started..." 3447003 "STARTED"
-
 echo "--- Pulling latest changes ---"
-git pull origin main
+git pull origin "BRANCH_NAME_PLACEHOLDER"
 
 # Post-deploy hooks
 if [ -f "package.json" ]; then
@@ -189,7 +187,7 @@ if [ -f "package.json" ]; then
 fi
 if [ -f "composer.json" ]; then
     echo "Installing PHP dependencies..."
-    composer install --no-dev --no-interaction --optimize-autoloader
+    sudo composer install --no-dev --no-interaction --optimize-autoloader
 fi
 
 send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
