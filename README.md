@@ -36,13 +36,13 @@ Run as a **standard user** (not root). The script configures the service to run 
 **Option 1: Quick Run**
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/refs/heads/master/setup-webhook.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/master/setup-webhook.sh)"
 ```
 
 **Option 2: Download & Inspect**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/refs/heads/master/setup-webhook.sh -o setup-webhook.sh
+curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/master/setup-webhook.sh -o setup-webhook.sh
 chmod +x setup-webhook.sh
 ./setup-webhook.sh
 ```
