@@ -1,35 +1,25 @@
 # GitLab Webhook Auto-Deploy Script
 
-Automated deployment system for GitLab repositories using [adnanh/webhook](https://github.com/adnanh/webhook). This script handles Git synchronization, dependency installation (PHP/Node), and Discord notifications on deployment events.
+Automated deployment system for GitLab repositories using [adnanh/webhook](https://github.com/adnanh/webhook). This script handles Git synchronizationvia SSH Deploy Keys, dependency installation (PHP/Node), and Discord notifications.
 
 ## Features
 
 - **Automated Setup**: Installs dependencies (`webhook`, `jq`, `git`, etc.), sets up firewall, and configures systemd.
-- **Secure Authentication**: Uses GitLab Personal Access Tokens (stored securely via `.git-askpass`).
+- **SSH Key Authentication**: Uses dedicated Ed25519 Deploy Keys for secure, repository-specific access. No personal tokens required.
 - **Smart Deployment**: Checks git hashes before pulling to prevent redundant operations.
 - **Rich Notifications**: Sends detailed deployment status to Discord (Commit hash, message, author, status).
-- **Dependency Management**: Automatically runs `npm install` and `composer install` if configuration files are detected.
-- **Service Management**: Creates and manages the `webhook` systemd service automatically.
+- **Dependency Management**: Detects `package.json` or `composer.json` and runs the appropriate install commands automatically.
+- **Isolated Configs**: Supports multiple projects by creating scoped directories for keys and scripts.
 
 ## Prerequisites
 
 - Ubuntu/Debian server
 - Sudo privileges
-- GitLab Repository
+- A GitLab Repository (Private or Public)
 
 ## Installation
 
-### 1. Create GitLab Access Token
-
-You need a token to allow the script to clone your private repository.
-
-1.  Go to **GitLab** (User Settings > Access Tokens) or **Project Settings** (Settings > Access Tokens).
-2.  Create a token with these scopes:
-    - `read_repository`
-    - `read_api` (or `api`)
-3.  **Copy the token** You will need it during setup.
-
-### 2. Download and Run
+### 1. Run the Script
 
 Run as a **standard user** (not root). The script configures the service to run under your user account.
 
@@ -47,6 +37,19 @@ chmod +x setup-webhook.sh
 ./setup-webhook.sh
 ```
 
+### 2. Add the Deploy Key to GitLab
+
+During execution, the script will pause and display a Public Key.
+1. Copy the displayed key (starting with `ssh-ed25519`).
+2. Go to your **GitLab Project > Settings > Repository**.
+3. Expand Deploy Keys.
+4. Click Add new key:
+    - Title: `Webhook-Deploy-Server`
+    - Key: Paste the public key here.
+    - Grant write permissions: Leave unchecked (read-only is safer).
+5. Click Add key.
+6. Return to your terminal and press ENTER.
+
 ### 3. Follow the Prompts
 
 The script will ask for:
@@ -56,7 +59,6 @@ The script will ask for:
 | **Project Path**    | Absolute path to your project (e.g., `/var/www/html/my-app`). |
 | **GitLab Repo URL** | The HTTPS URL of your repository.                             |
 | **Branch**          | The branch to deploy (e.g., `main`).                          |
-| **GitLab Token**    | Access token with `read_repository` or `api` scope.           |
 | **Discord Webhook** | (Optional) URL for deployment notifications.                  |
 
 > **Note**: If you pre-define `PROJECT_PATH` env var, it may also prompt for the webhook base config path.
@@ -123,7 +125,7 @@ You can run the deployment script manually to test:
 
 ## Troubleshooting
 
-- **"Cannot access repo"**: Verify your Token has `read_repository` or `api` scope and the branch exists.
+- **Permission Denied (publickey)**: Ensure the Deploy Key was added to the specific GitLab repository and that you used the SSH URL (starts with git@), not HTTPS.
 - **Permission Denied**: Ensure your user has write access to the `PROJECT_PATH`.
 - **Webhook not triggering**: Check if port 9000 is open (`sudo ufw status`) and accessible from the internet.
 - **Logs**: Check `/var/www/deploy-webhook/webhook.log` for execution errors.
