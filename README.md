@@ -117,6 +117,57 @@ You can run the deployment script manually to test:
 /var/www/deploy-webhook/<project-name>/redeploy.sh
 ```
 
+## 🔧 NGINX CONFIGURATION GUIDE
+
+To expose the webhook securely, it is recommended to set up a reverse proxy with Nginx. This allows you to use a standard domain and SSL (HTTPS) for secure communication.
+
+### 1. Nginx Server Block
+Add or update your site configuration (e.g., `/etc/nginx/sites-available/default`):
+
+```nginx
+server {
+  listen 80;
+  server_name your-domain.com;
+
+  location /webhooks/ {
+    proxy_pass http://127.0.0.1:9000/;
+
+    # Standard proxy headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Optional: Limit access to specific IP ranges (e.g., GitLab IPs)
+    # allow 140.82.112.0/20;
+    # deny all;
+  }
+}
+```
+
+### 2. Apply Changes
+Replace `your-domain.com` with your actual domain and set up SSL (e.g., using Let's Encrypt). After updating, reload Nginx:
+
+`sudo nginx -t`
+`sudo nginx -s reload`
+
+---
+
+## 🔐 SECURITY TIP: LIMITING WEBHOOK ACCESS
+
+For enhanced security, restrict the webhook service so it only listens to requests coming from your local machine (Nginx). 
+
+### Update Systemd Service
+Edit the webhook systemd service to include an IP allow-list. Modify the `ExecStart` line in `/etc/systemd/system/webhook.service` to include the `-ip` flag:
+
+`ExecStart=/usr/bin/webhook -hooks /var/www/deploy-webhook/hooks.json -hotreload -port 9000 -ip "127.0.0.1" -urlprefix ""`
+
+### Restart Service
+After making changes, reload the systemd daemon and restart the service:
+
+`sudo systemctl daemon-reload`
+`sudo systemctl restart webhook`
+
 ## Security
 
 - **Firewall**: The script attempts to open port `9000` using `ufw`. Ensure your cloud provider firewall (AWS Security Groups, DigitalOcean, etc.) also allows traffic on port 9000.
