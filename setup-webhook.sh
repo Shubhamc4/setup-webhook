@@ -250,9 +250,8 @@ sudo systemctl restart webhook
 
 echo "✅ SETUP COMPLETE"
 
-# Show the guide on how to setup webhook proxy in nginx
 echo "-------------------------------------------------------"
-echo "🔧 NGINX CONFIGURATION GUIDE"
+echo "🔧 NGINX CONFIGURATION GUIDE (Optional)"
 echo "To expose the webhook securely, it's recommended to set up a reverse proxy with Nginx. Here's a sample configuration snippet:"
 echo "-------------------------------------------------------"
 echo "server {
@@ -277,8 +276,7 @@ echo "server {
 echo "-------------------------------------------------------"
 echo "Make sure to replace 'your-domain.com' with your actual domain and set up SSL (e.g., using Let's Encrypt) for secure communication. After updating your Nginx configuration, reload Nginx to apply the changes:"
 echo "sudo nginx -s reload"
-
-# Now suggest setting the webhook config to limit ip
+echo "Also update the webhook url in gitlab repo."
 echo "-------------------------------------------------------"
 echo "🔐 SECURITY TIP: LIMITING WEBHOOK ACCESS"
 echo "Edit the webhook systemd service to include an IP allow list for enhanced security. You can modify the ExecStart line to include the -ip flag:"
