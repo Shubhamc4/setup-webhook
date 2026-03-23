@@ -2,7 +2,6 @@
 
 set -e
 
-# Check if user has sudo access
 if ! [ -x "$(command -v sudo)" ]; then
   echo 'Error: sudo is not installed.' >&2
   exit 1
@@ -34,27 +33,25 @@ DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
 
 read -p "Enter your project path (e.g., /var/www/my-app): " PROJECT_PATH
 PROJECT_NAME=$(basename "$PROJECT_PATH")
-HOOK_ID="redeploy-${PROJECT_NAME}"
-
-PROJECT_CONFIG_DIR="$DEPLOY_BASE_PATH/$PROJECT_NAME"
-sudo mkdir -p "$PROJECT_CONFIG_DIR"
-sudo chown -R "$USER:$USER" "$PROJECT_CONFIG_DIR"
 
 HOOK_SECRET=$(openssl rand -hex 16)
 PUBLIC_IP=$(hostname -I | awk '{print $1}')
-WEBHOOK_URL="http://${PUBLIC_IP}:9000/hooks/${HOOK_ID}"
+WEBHOOK_URL="http://${PUBLIC_IP}:9000/${PROJECT_NAME}"
+SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 
 #######################################
 # 4. SSH Key Generation (Deploy Key)
 #######################################
-SSH_KEY_PATH="$PROJECT_CONFIG_DIR/id_ed25519"
+SSH_PATH="$SSH_FOLDER/id_ed25519"
+sudo mkdir -p "$SSH_FOLDER"
+sudo chown -R "$USER:$USER" "$SSH_FOLDER"
 
-if [ ! -f "$SSH_KEY_PATH" ]; then
+if [ ! -f "$SSH_PATH" ]; then
     echo "Generating new SSH Deploy Key..."
-    ssh-keygen -t ed25519 -C "deploy@$PROJECT_NAME" -f "$SSH_KEY_PATH" -N ""
+    ssh-keygen -t ed25519 -C "gitlab-ci@$PUBLIC_IP" -f "$SSH_PATH" -N ""
 fi
 
-PUB_KEY=$(cat "${SSH_KEY_PATH}.pub")
+PUB_KEY=$(cat "${SSH_PATH}.pub")
 
 echo "-------------------------------------------------------"
 echo "🔑 ACTION REQUIRED: ADD DEPLOY KEY TO GITLAB"
@@ -81,10 +78,10 @@ REPO_DOMAIN=$(echo "$REPO_PATH" | sed -E 's/.*@([^:]+).*/\1/')
 
 # Configure SSH to use this specific key for this domain
 # We use a custom SSH command in the redeploy script rather than modifying ~/.ssh/config globally
-SSH_WRAPPER="$PROJECT_CONFIG_DIR/ssh_wrapper.sh"
+SSH_WRAPPER="$SSH_FOLDER/ssh_wrapper.sh"
 cat > "$SSH_WRAPPER" <<EOF
 #!/bin/bash
-ssh -i "$SSH_KEY_PATH" -o "StrictHostKeyChecking=accept-new" "\$@"
+ssh -i "$SSH_PATH" -o "StrictHostKeyChecking=accept-new" "\$@"
 EOF
 chmod +x "$SSH_WRAPPER"
 
@@ -113,7 +110,7 @@ fi
 #######################################
 # 7. Create Redeploy Script
 #######################################
-DEPLOY_SCRIPT="$PROJECT_CONFIG_DIR/redeploy.sh"
+DEPLOY_SCRIPT="$DEPLOY_BASE_PATH/redeploy/$PROJECT_NAME.sh"
 SERVER_NAME=$(hostname)
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 
@@ -123,10 +120,15 @@ set -e
 
 # Force git to use the specific deploy key
 export GIT_SSH="SSH_WRAPPER_PLACEHOLDER"
+LOG_FILE="/tmp/PROJECT_NAME_PLACEHOLDER.log"
+DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
 cd "PROJECT_PATH_PLACEHOLDER"
 
 send_discord() {
-  [ -z "DISCORD_URL_PLACEHOLDER" ] && return
+  if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+    mv "$LOG_FILE" "DEPLOY_BASE_PATH_PLACEHOLDER/logs/PROJECT_NAME_PLACEHOLDER-$(date +%s).log"
+    return
+  fi
   local MSG="$1"
   local COLOR="$2"
   local STATUS="$3"
@@ -149,25 +151,55 @@ send_discord() {
       {name: "Author", value: $auth, inline: true}, {name: "Message", value: $msg, inline: false}
     ], timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), footer: {text: "Deploy System"}}]}')
 
-  curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "DISCORD_URL_PLACEHOLDER" > /dev/null 2>&1
+  curl -s -X POST \
+        -F "payload_json=$PAYLOAD" \
+        -F "file1=@$LOG_FILE" \
+        "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
+
+  rm -f "$LOG_FILE"
 }
 
-git fetch origin "BRANCH_NAME_PLACEHOLDER"
-LOCAL_HASH=$(git rev-parse HEAD)
-REMOTE_HASH=$(git rev-parse origin/"BRANCH_NAME_PLACEHOLDER")
+trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"' ERR
 
-if [ "$LOCAL_HASH" == "$REMOTE_HASH" ]; then
-    send_discord "✅ Already up to date." 3447003 "UP-TO-DATE"
-    exit 0
-fi
+{
+  git fetch origin "BRANCH_NAME_PLACEHOLDER"
 
-git pull origin "BRANCH_NAME_PLACEHOLDER"
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# Optional Hooks
-[ -f "package.json" ] && npm install > /dev/null 2>&1
-[ -f "composer.json" ] && composer install --no-dev --no-interaction --optimize-autoloader > /dev/null 2>&1
+  if [ "$CURRENT_BRANCH" != "BRANCH_NAME_PLACEHOLDER" ]; then
+      echo "--- Switching to BRANCH_NAME_PLACEHOLDER ---"
+      git checkout "BRANCH_NAME_PLACEHOLDER" || git checkout -b "BRANCH_NAME_PLACEHOLDER" --track origin/"BRANCH_NAME_PLACEHOLDER"
+  fi
 
-send_discord "🚀 Successfully deployed." 3066993 "SUCCESS"
+  git pull origin "BRANCH_NAME_PLACEHOLDER"
+
+  CHANGED_FILES=$(git diff --name-only HEAD@{1} HEAD)
+
+  # Post-deploy hooks
+  if echo "$CHANGED_FILES" | grep -q "composer.json"; then
+    echo "Composer.json updated. Running composer install..."
+    composer install --no-dev --no-interaction --optimize-autoloader
+  fi
+
+  # Laravel specific
+  if echo "$CHANGED_FILES" | grep -qE "database/migrations/"; then
+    php artisan migrate --force
+  fi
+
+  if echo "$CHANGED_FILES" | grep -qE "package.json|resources/"; then
+    if echo "$CHANGED_FILES" | grep -qE "package.json"; then
+      npm ci # or yarn install --frozen-lockfile
+    fi
+
+    npm run build # or your specific build command
+  fi
+
+  if echo "$CHANGED_FILES" | grep -q "\.env\.example"; then
+      echo "⚠️ .env.example changed. Check if your .env needs manual updates!"
+  fi
+
+  send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
+} 2>&1 | tee -a "$LOG_FILE"
 EOF
 
 # Placeholder Replacements
@@ -181,14 +213,15 @@ sed -i "s|PROJECT_NAME_PLACEHOLDER|$PROJECT_NAME|g" "$DEPLOY_SCRIPT"
 sed -i "s|BRANCH_NAME_PLACEHOLDER|$BRANCH_NAME|g" "$DEPLOY_SCRIPT"
 sed -i "s|SERVER_NAME_PLACEHOLDER|$SERVER_NAME|g" "$DEPLOY_SCRIPT"
 sed -i "s|LOCAL_IP_PLACEHOLDER|$LOCAL_IP|g" "$DEPLOY_SCRIPT"
+sed -i "s|DEPLOY_BASE_PATH_PLACEHOLDER|$DEPLOY_BASE_PATH|g" "$DEPLOY_SCRIPT"
 
 chmod +x "$DEPLOY_SCRIPT"
 
 #######################################
-# 8. Webhook & Systemd (Remains largely the same)
+# 8. Webhook & Systemd
 #######################################
 HOOKS_FILE="$DEPLOY_BASE_PATH/hooks.json"
-NEW_HOOK=$(jq -n --arg id "$HOOK_ID" --arg cmd "$DEPLOY_SCRIPT" --arg dir "$PROJECT_PATH" --arg secret "$HOOK_SECRET" --arg ref "refs/heads/$BRANCH_NAME" \
+NEW_HOOK=$(jq -n --arg id "$PROJECT_NAME" --arg cmd "$DEPLOY_SCRIPT" --arg dir "$PROJECT_PATH" --arg secret "$HOOK_SECRET" --arg ref "refs/heads/$BRANCH_NAME" \
 '{id: $id, "execute-command": $cmd, "command-working-directory": $dir, "trigger-rule": {"and": [{"match": {"type": "value", "value": "push", "parameter": {"source": "payload", "name": "object_kind"}}}, {"match": {"type": "value", "value": $ref, "parameter": {"source": "payload", "name": "ref"}}}, {"match": {"type": "value", "value": $secret, "parameter": {"source": "header", "name": "X-Gitlab-Token"}}}]}}')
 
 if [ -f "$HOOKS_FILE" ]; then
@@ -203,7 +236,7 @@ Description=Git Webhook Listener
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/webhook -hooks $HOOKS_FILE -hotreload -verbose
+ExecStart=/usr/bin/webhook -hooks $HOOKS_FILE -hotreload -verbose -urlprefix ""
 Restart=always
 User=$USER
 
@@ -216,3 +249,37 @@ sudo systemctl enable webhook
 sudo systemctl restart webhook
 
 echo "✅ SETUP COMPLETE"
+
+# Show the guide on how to setup webhook proxy in nginx
+echo "-------------------------------------------------------"
+echo "🔧 NGINX CONFIGURATION GUIDE"
+echo "To expose the webhook securely, it's recommended to set up a reverse proxy with Nginx. Here's a sample configuration snippet:"
+echo "-------------------------------------------------------"
+echo "server {
+  listen 80;
+  server_name your-domain.com;
+
+  location /webhooks/ {
+    # Forward the request to the local webhook service
+    proxy_pass http://127.0.0.1:9000/;
+
+    # Standard proxy headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Optional: Limit access to specific IP ranges (e.g., GitHub IPs)
+    # allow 140.82.112.0/20;
+    # deny all;
+  }
+}"
+echo "-------------------------------------------------------"
+echo "Make sure to replace 'your-domain.com' with your actual domain and set up SSL (e.g., using Let's Encrypt) for secure communication. After updating your Nginx configuration, reload Nginx to apply the changes:"
+echo "sudo nginx -s reload"
+
+# Now suggest setting the webhook config to limit ip
+echo "-------------------------------------------------------"
+echo "🔐 SECURITY TIP: LIMITING WEBHOOK ACCESS"
+echo "Edit the webhook systemd service to include an IP allow list for enhanced security. You can modify the ExecStart line to include the -ip flag:"
+echo "ExecStart=/usr/bin/webhook -hooks $HOOKS_FILE -hotreload -port 9000 -ip \"127.0.0.1\" -urlprefix \"\""
