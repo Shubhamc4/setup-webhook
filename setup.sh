@@ -121,6 +121,7 @@ set -e
 # Force git to use the specific deploy key
 export GIT_SSH="SSH_WRAPPER_PLACEHOLDER"
 LOG_FILE="/tmp/PROJECT_NAME_PLACEHOLDER.log"
+PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
 DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
 cd "PROJECT_PATH_PLACEHOLDER"
 
@@ -138,7 +139,7 @@ send_discord() {
   local COMMIT_AUTHOR=$(git log -1 --pretty=%an 2>/dev/null || echo "N/A")
   local COMMIT_URL="REPO_PATH_PLACEHOLDER/-/commit/$(git rev-parse HEAD 2>/dev/null || echo "")"
 
-  PAYLOAD=$(jq -n \
+  echo $(jq -n \
     --arg title "🚀 Deployment: PROJECT_NAME_PLACEHOLDER" \
     --arg desc "$MSG" --arg status "$STATUS" --arg branch "BRANCH_NAME_PLACEHOLDER" \
     --arg hash "$COMMIT_HASH" --arg msg "$COMMIT_MSG" --arg auth "$COMMIT_AUTHOR" \
@@ -149,14 +150,15 @@ send_discord() {
       {name: "Path", value: ("`" + $path + "`"), inline: false}, {name: "Status", value: $status, inline: true},
       {name: "Branch", value: $branch, inline: true}, {name: "Commit", value: "[\($hash)](\($url))", inline: true},
       {name: "Author", value: $auth, inline: true}, {name: "Message", value: $msg, inline: false}
-    ], timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), footer: {text: "Deploy System"}}]}')
+    ], timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), footer: {text: "Deploy System"}}]}'
+  ) > "$PAYLOAD_FILE"
 
   curl -s -X POST \
-        -F "payload_json=$PAYLOAD" \
-        -F "file1=@$LOG_FILE" \
-        "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
-
-  rm -f "$LOG_FILE"
+    -F "payload_json=<${PAYLOAD_FILE}" \
+    -F "file1=@$LOG_FILE" \
+    "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
+  
+  rm -f "$LOG_FILE" "$PAYLOAD_FILE"
 }
 
 trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"' ERR
@@ -167,7 +169,6 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
   if [ "$CURRENT_BRANCH" != "BRANCH_NAME_PLACEHOLDER" ]; then
-      echo "--- Switching to BRANCH_NAME_PLACEHOLDER ---"
       git checkout "BRANCH_NAME_PLACEHOLDER" || git checkout -b "BRANCH_NAME_PLACEHOLDER" --track origin/"BRANCH_NAME_PLACEHOLDER"
   fi
 
