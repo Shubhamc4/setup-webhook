@@ -179,7 +179,7 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
 
   git pull origin "BRANCH_NAME_PLACEHOLDER"
 
-  CHANGED_FILES=$(git diff --name-only HEAD@{1} HEAD)
+  CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
 
   # Post-deploy hooks
   if echo "$CHANGED_FILES" | grep -q "composer.json"; then
@@ -242,12 +242,12 @@ Description=Git Webhook Listener
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/webhook \
-  -hooks $HOOKS_FILE \
-  -hotreload \
-  -logfile $DEPLOY_BASE_PATH/webhook.log \
-  -verbose \
-  -urlprefix ""
+ExecStart=/usr/bin/webhook \\
+-hooks $HOOKS_FILE \\
+-hotreload \\
+-logfile $DEPLOY_BASE_PATH/webhook.log \\
+-verbose \\
+-urlprefix \"\"
 Restart=always
 User=$USER
 
@@ -269,7 +269,7 @@ echo "server {
   listen 80;
   server_name your-domain.com;
 
-  location /webhooks/ {
+  location /git-hooks/ {
     # Forward the request to the local webhook service
     proxy_pass http://127.0.0.1:9000/;
 
