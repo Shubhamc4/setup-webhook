@@ -117,6 +117,8 @@ DEPLOY_SCRIPT="$DEPLOY_BASE_PATH/redeploy/$PROJECT_NAME.sh"
 SERVER_NAME=$(hostname)
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 
+mkdir -p "$DEPLOY_BASE_PATH/redeploy"
+
 cat > "$DEPLOY_SCRIPT" <<'EOF'
 #!/bin/bash
 set -e
