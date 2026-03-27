@@ -14,7 +14,7 @@ echo "Installing requirements..."
 sudo apt-get update -qq > /dev/null 2>&1 && sudo apt-get install -y -qq webhook jq curl git openssl > /dev/null 2>&1
 
 #######################################
-# 2. Open firewall port
+# 3. Open firewall port
 #######################################
 if sudo ufw status | grep -q "Status: active"; then
   echo "UFW is active. Opening port 9000..."
@@ -23,17 +23,38 @@ else
   echo "UFW is not active. Skipping firewall rule configuration."
 fi
 
-#######################################
-# 3. Paths + Project Info
-#######################################
 DEPLOY_BASE_PATH="/var/www/deploy-webhook"
-
-read -p "Enter GitLab Repo SSH path (e.g., git@gitlab.com:user/repo.git): " REPO_PATH
-REPO_NAME=$(basename "$REPO_PATH" .git)
-
+SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 read -p "Enter Deploy Webhook Base Path [$DEPLOY_BASE_PATH]: " input
 DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
 
+#######################################
+# 1. Git Configuration
+#######################################
+read -p "Enter GitLab Repo SSH path (e.g., git@gitlab.com:user/repo.git): " REPO_PATH
+read -p "Enter branch to deploy: " BRANCH_NAME
+REPO_NAME=$(basename "$REPO_PATH" .git)
+# Extract domain for SSH config (usually gitlab.com)
+REPO_DOMAIN=$(echo "$REPO_PATH" | sed -E 's/.*@([^:]+).*/\1/')
+# Configure SSH to use this specific key for this domain
+# We use a custom SSH command in the redeploy script rather than modifying ~/.ssh/config globally
+SSH_WRAPPER="$SSH_FOLDER/ssh_wrapper.sh"
+cat > "$SSH_WRAPPER" <<EOF
+#!/bin/bash
+ssh -i "$SSH_PATH" -o "StrictHostKeyChecking=accept-new" "\$@"
+EOF
+chmod +x "$SSH_WRAPPER"
+
+# Verify repo access
+echo "Testing connection..."
+if ! GIT_SSH="$SSH_WRAPPER" git ls-remote --heads "$REPO_PATH" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+  echo "❌ ERROR: Cannot access repo. Ensure the Deploy Key is added and has read access."
+  exit 1
+fi
+
+#######################################
+# 4. Paths + Project Info
+#######################################
 read -p "Enter your project path (e.g., /var/www/$REPO_NAME): " PROJECT_PATH
 PROJECT_PATH=${PROJECT_PATH:-/var/www/$REPO_NAME}
 PROJECT_NAME=$(basename "$PROJECT_PATH")
@@ -41,10 +62,9 @@ PROJECT_NAME=$(basename "$PROJECT_PATH")
 HOOK_SECRET=$(openssl rand -hex 16)
 PUBLIC_IP=$(hostname -I | awk '{print $1}')
 WEBHOOK_URL="http://${PUBLIC_IP}:9000/${PROJECT_NAME}"
-SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 
 #######################################
-# 4. SSH Key Generation (Deploy Key)
+# 5. SSH Key Generation (Deploy Key)
 #######################################
 SSH_PATH="$SSH_FOLDER/id_ed25519"
 sudo mkdir -p "$SSH_FOLDER"
@@ -69,31 +89,7 @@ echo "Webhook URL:  $WEBHOOK_URL"
 echo "Secret Token: $HOOK_SECRET"
 echo "-------------------------------------------------------"
 read -p "Press ENTER once the Deploy Key is added to GitLab..."
-
-#######################################
-# 5. Git Configuration
-#######################################
-read -p "Enter branch to deploy: " BRANCH_NAME
 read -p "Enter Discord Webhook URL (Blank to skip): " DISCORD_URL
-
-# Extract domain for SSH config (usually gitlab.com)
-REPO_DOMAIN=$(echo "$REPO_PATH" | sed -E 's/.*@([^:]+).*/\1/')
-
-# Configure SSH to use this specific key for this domain
-# We use a custom SSH command in the redeploy script rather than modifying ~/.ssh/config globally
-SSH_WRAPPER="$SSH_FOLDER/ssh_wrapper.sh"
-cat > "$SSH_WRAPPER" <<EOF
-#!/bin/bash
-ssh -i "$SSH_PATH" -o "StrictHostKeyChecking=accept-new" "\$@"
-EOF
-chmod +x "$SSH_WRAPPER"
-
-# Verify repo access
-echo "Testing connection..."
-if ! GIT_SSH="$SSH_WRAPPER" git ls-remote --heads "$REPO_PATH" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
-  echo "❌ ERROR: Cannot access repo. Ensure the Deploy Key is added and has read access."
-  exit 1
-fi
 
 #######################################
 # 6. Initial Clone
@@ -131,7 +127,8 @@ PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
 DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
 PUBLIC_IP=$(hostname -I | awk '{print $1}')
 APP_NAME="PROJECT_NAME_PLACEHOLDER"
-cd "PROJECT_PATH_PLACEHOLDER"
+PROJECT_PATH="PROJECT_PATH_PLACEHOLDER"
+cd "$PROJECT_PATH"
 
 send_discord() {
   if [ -z "$DISCORD_WEBHOOK_URL" ]; then
@@ -148,11 +145,11 @@ send_discord() {
   local COMMIT_URL="REPO_PATH_PLACEHOLDER/-/commit/$(git rev-parse HEAD 2>/dev/null || echo "")"
 
   echo $(jq -n \
-    --arg title "🚀 Deployment: PROJECT_NAME_PLACEHOLDER" \
+    --arg title "🚀 Deployment: $APP_NAME" \
     --arg desc "$MSG" --arg status "$STATUS" --arg branch "BRANCH_NAME_PLACEHOLDER" \
     --arg hash "$COMMIT_HASH" --arg msg "$COMMIT_MSG" --arg auth "$COMMIT_AUTHOR" \
-    --arg url "$COMMIT_URL" --arg srv "SERVER_NAME_PLACEHOLDER" --arg ip "LOCAL_IP_PLACEHOLDER" \
-    --arg path "PROJECT_PATH_PLACEHOLDER" --arg color "$COLOR" \
+    --arg url "$COMMIT_URL" --arg srv "$APP_NAME" --arg ip "$PUBLIC_IP" \
+    --arg path "$PROJECT_PATH" --arg color "$COLOR" \
     '{username: "\($srv) Bot", embeds: [{title: $title, description: $desc, color: ($color|tonumber), fields: [
       {name: "Server", value: $srv, inline: true}, {name: "IP", value: $ip, inline: true},
       {name: "Path", value: ("`" + $path + "`"), inline: false}, {name: "Status", value: $status, inline: true},
@@ -212,13 +209,14 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
 EOF
 
 # Placeholder Replacements
+APP_NAME_FORMATTED="${APP_NAME//-/ }"
 sed -i "s|SSH_WRAPPER_PLACEHOLDER|$SSH_WRAPPER|g" "$DEPLOY_SCRIPT"
 sed -i "s|PROJECT_PATH_PLACEHOLDER|$PROJECT_PATH|g" "$DEPLOY_SCRIPT"
 sed -i "s|DISCORD_URL_PLACEHOLDER|$DISCORD_URL|g" "$DEPLOY_SCRIPT"
 # Convert SSH git path to HTTP for Discord Link mapping
 HTTP_REPO_LINK=$(echo "$REPO_PATH" | sed -E 's#git@([^:]+):#https://\1/#; s#\.git$##')
 sed -i "s|REPO_PATH_PLACEHOLDER|$HTTP_REPO_LINK|g" "$DEPLOY_SCRIPT"
-sed -i "s|PROJECT_NAME_PLACEHOLDER|$PROJECT_NAME|g" "$DEPLOY_SCRIPT"
+sed -i "s|PROJECT_NAME_PLACEHOLDER|${APP_NAME_FORMATTED^}|g" "$DEPLOY_SCRIPT"
 sed -i "s|BRANCH_NAME_PLACEHOLDER|$BRANCH_NAME|g" "$DEPLOY_SCRIPT"
 sed -i "s|SERVER_NAME_PLACEHOLDER|$SERVER_NAME|g" "$DEPLOY_SCRIPT"
 sed -i "s|LOCAL_IP_PLACEHOLDER|$LOCAL_IP|g" "$DEPLOY_SCRIPT"
