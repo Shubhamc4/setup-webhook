@@ -125,6 +125,7 @@ set -e
 
 # Force git to use the specific deploy key
 export GIT_SSH="SSH_WRAPPER_PLACEHOLDER"
+export COMPOSER_ALLOW_SUPERUSER=1
 LOG_FILE="/tmp/PROJECT_NAME_PLACEHOLDER.log"
 PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
 DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
