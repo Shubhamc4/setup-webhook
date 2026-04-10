@@ -127,6 +127,7 @@ export APP_NAME="PROJECT_NAME_PLACEHOLDER"
 export BRANCH="BRANCH_NAME_PLACEHOLDER"
 export PROJECT_PATH="PROJECT_PATH_PLACEHOLDER"
 export DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
+export LOG_FILE="/tmp/deploy.log"
 
 source <(curl -sL https://raw.githubusercontent.com/Shubhamc4/setup-github-webhook/main/discord_notify.sh)
 
