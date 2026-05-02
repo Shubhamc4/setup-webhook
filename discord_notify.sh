@@ -59,7 +59,7 @@ notify_deploy() {
     --arg desc "$MSG" \
     --arg color "$COLOR" \
     '{
-      username: "`\($srv)` Bot",
+      username: "\($srv) Bot",
       embeds: [{
         title: "🚀 Automatic Deployment: \($srv)",
         description: $desc,
